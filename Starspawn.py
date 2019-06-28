@@ -47,32 +47,62 @@ class Border(Enum):
             return Border.LEFT
         if self == Border.BOTTOM:
             return Border.TOP
+            
+    @staticmethod
+    def sheet_pos(neighbor_set):
+        x, y = 0, 0
+        if Border.LEFT in neighbor_set:
+            if Border.RIGHT in neighbor_set:
+                x = 3
+            else:
+                x = 0
+        else:
+            if Border.RIGHT in neighbor_set:
+                x = 2
+            else:
+                x = 1
+        if Border.TOP in neighbor_set:
+            if Border.BOTTOM in neighbor_set:
+                y = 3
+            else:
+                y = 0
+        else:
+            if Border.BOTTOM in neighbor_set:
+                y = 2
+            else:
+                y = 1
+        return x, y
 
 class Block():
+    all_blocks = dict()
     tiles = (tileAt(0, 0),)
     colors = ((158, 87, 21),)
     index = 4
-    def __init__(self, data):
+    def __init__(self, offset, modifier):
         self.tile = self.tiles[0]
         self.color = self.colors[0]
-        
-    def get_sprite(self, small=False):
+            
+    def get_tile(self, neighbors, small=False):
         if small:
             return self.tile[1]
         else:
             return self.tile[0]
-            
-    def get_tile(self, neighbors, small=False):
-        return self.get_sprite(small)
         
-    def add_neighbor(self, pos):
+    def add_neighbor(self, pos, index):
         pass
         
-    def remove_neighbor(self, pos):
+    def remove_neighbor(self, pos, index):
         pass
         
     def clear_neighbors(self):
         pass
+        
+    @staticmethod
+    def from_data(data):
+        block_type = Block.all_blocks[int(data[0])]
+        offset = int(data[3])
+        modifier = int(data[4])
+        return block_type(offset, modifier)
         
         
 class BlockBordered(Block):
@@ -80,146 +110,102 @@ class BlockBordered(Block):
     dark_color = (125, 66, 9)
     generated = False
     sheets = []
-    def __init__(self, data):
-        super().__init__(data)
+    
+    
+    def __init__(self, offset, modifier):
+        super().__init__(offset, modifier)
         self.neighbors = set()
         if not type(self).generated:
             self.sheets.append(self.generate_borders(self.tile))
             type(self).generated = True
+        self.sheet, self.sheet_small = self.sheets[0]
+            
+    def get_tile(self, small=False):
+        x, y = Border.sheet_pos(self.neighbors)
+        if small:
+            return self.sheet_small.crop(x*12, y*12, (x+1)*12, (y+1)*12)
+        else:
+            return self.sheet_small.crop(x*24, y*24, (x+1)*24, (y+1)*24)
         
-    def add_neighbor(self, pos):
+    def add_neighbor(self, pos, index):
         self.neighbors.add(pos)
         
     def remove_neighbor(self, pos):
-        self.neighbors.remove(pos)
+        self.neighbors.remove(pos, index)
         
     def clear_neighbors(self):
         self.neighbors.clear()
         
     def generate_borders(self, tile):
-        sheet = Image.new("RGBA", (144, 72), ImageColor.colormap["white"])
-        sheet_small = Image.new("RGBA", (72, 36), ImageColor.colormap["white"])
+        sheet = Image.new("RGBA", (96, 96), ImageColor.colormap["white"])
+        sheet_small = Image.new("RGBA", (48, 48), ImageColor.colormap["white"])
         px = sheet.load()
         px_small = sheet_small.load()
-        for i in range(3):
-            sheet.paste(tile[0], (72+i*24, 24))
-            sheet.paste(tile[0], (96, i*24))
-            sheet_small.paste(tile[1], (36+i*12, 12))
-            sheet_small.paste(tile[1], (48, i*12))
-            for j in range(3):
+        for i in range(4):
+            for j in range(4):
                 sheet.paste(tile[0], (i*24, j*24))
                 sheet_small.paste(tile[1], (i*12, j*12))
         
-        edge_set = set((0, 23, 24, 47, 48, 71)) 
-        for i in range(72):
+        edge_set = set((0, 23, 24, 47, 48, 71, 72, 95))         
+        for i in range(96):
+            # general edges
             # top
-            px[71-i, 0] = self.light_color
-            px[143-i, 24] = self.light_color
+            px[95-i, 0] = self.light_color
+            px[95-i, 72] = self.light_color
             # right
-            px[71, 71-i] = self.light_color
-            px[119, 71-i] = self.light_color
+            px[95, 95-i] = self.light_color
+            px[71, 95-i] = self.light_color
             # bottom
+            px[i, 95] = self.dark_color
             px[i, 71] = self.dark_color
-            px[i+72, 47] = self.dark_color
             # left
             px[0, i] = self.dark_color
-            px[96, i] = self.dark_color                        
+            px[72, i] = self.dark_color
             
-            if i not in edge_set and i >= 24 and i <= 47:
+            if i not in edge_set:
+                # bevel
                 # top
-                px[71-i, 1] = self.light_color
-                px[143-i, 25] = self.light_color
+                px[95-i, 1] = self.light_color
+                px[95-i, 73] = self.light_color
                 # right
-                px[70, 71-i] = self.light_color
-                px[118, 71-i] = self.light_color
+                px[94, 95-i] = self.light_color
+                px[70, 95-i] = self.light_color
                 # bottom
+                px[i, 94] = self.dark_color
                 px[i, 70] = self.dark_color
-                px[i+72, 46] = self.dark_color
                 # left
                 px[1, i] = self.dark_color
-                px[97, i] = self.dark_color
-                
-                # top
-                px[143-i, 1] = self.light_color
-                px[143-i, 0] = self.light_color
-                # right
-                px[142, 71-i] = self.light_color
-                px[143, 71-i] = self.light_color
-                # bottom
-                px[i+72, 70] = self.dark_color
-                px[i+72, 71] = self.dark_color
-                # left
                 px[73, i] = self.dark_color
-                px[72, i] = self.dark_color
-                
-            elif i not in edge_set:
-                # top
-                px[71-i, 1] = self.light_color
-                px[143-i, 25] = self.light_color
-                # right
-                px[70, 71-i] = self.light_color
-                px[118, 71-i] = self.light_color
-                # bottom
-                px[i, 70] = self.dark_color
-                px[i+72, 46] = self.dark_color
-                # left
-                px[1, i] = self.dark_color
-                px[97, i] = self.dark_color
-                
-            elif i >= 24 and i <= 47:
-                # top
-                px[143-i, 0] = self.light_color
-                # right
-                px[143, 71-i] = self.light_color
-                # bottom
-                px[i+72, 71] = self.dark_color
-                # left
-                px[72, i] = self.dark_color
-                
-                       
-                    
-        
-        for i in range(36):
+
+        for i in range(48):
+            # general edges
             # top
-            px_small[35-i, 0] = self.light_color
-            px_small[71-i, 12] = self.light_color
+            px_small[47-i, 0] = self.light_color
+            px_small[47-i, 36] = self.light_color
             # right
-            px_small[35, 35-i] = self.light_color
-            px_small[59, 35-i] = self.light_color
+            px_small[47, 47-i] = self.light_color
+            px_small[35, 47-i] = self.light_color
             # bottom
+            px_small[i, 47] = self.dark_color
             px_small[i, 35] = self.dark_color
-            px_small[i+36, 23] = self.dark_color
             # left
             px_small[0, i] = self.dark_color
-            px_small[48, i] = self.dark_color
+            px_small[36, i] = self.dark_color
             
-            if i >= 1 and i <= 34:
+            if i not in edge_set:
+                # bevel
                 # top
-                px_small[71-i, 11] = self.light_color
-                px_small[35-i, 1] = self.light_color
+                px_small[47-i, 1] = self.light_color
+                px_small[47-i, 37] = self.light_color
                 # right
-                px_small[58, 35-i] = self.light_color
-                px_small[34, 35-i] = self.light_color
+                px_small[46, 47-i] = self.light_color
+                px_small[34, 47-i] = self.light_color
                 # bottom
-                px_small[i+36, 22] = self.dark_color
+                px_small[i, 46] = self.dark_color
                 px_small[i, 34] = self.dark_color
                 # left
-                px_small[47, i] = self.dark_color
                 px_small[1, i] = self.dark_color
-            
-                if i >= 12 and i <= 23:
-                    # top
-                    px_small[71-i, 0] = self.light_color
-                    px_small[71-i, 11] = self.light_color
-                    # right
-                    px_small[71, 35-i] = self.light_color
-                    px_small[58, 35-i] = self.light_color
-                    # bottom
-                    px_small[i+36, 35] = self.dark_color
-                    px_small[i+36, 22] = self.dark_color
-                    # left
-                    px_small[47, i] = self.dark_color
-                    px_small[36, i] = self.dark_color
+                px_small[37, i] = self.dark_color
                 
             
         return sheet, sheet_small
@@ -265,7 +251,8 @@ class BlockDirt(Block):
     colors = ((158, 87, 21), (129, 51, 0))
     index = 4
     
-    def __init__(self, data):
+    def __init__(self, offset, modifier):
+        super().__init__(offset, modifier)
         tile = random.randint(0, 3)
         self.tile = self.tiles[tile]
         self.color = colors[tile // 2]
@@ -276,14 +263,15 @@ class BlockFury(Block):
     colors = ((255, 168, 0),)
     index = 5
               
-    def __init__(self, data):
+    def __init__(self, offset, modifier):
         # TODO: Verify modifier
-        if data.modifier == 0:
+        super().__init__(offset, modifier)
+        if modifier == 0:
             self.tile = self.tiles[3]
         else:
-            if data.offset == 2:
+            if offset == 2:
                 self.tile = self.tiles[0]
-            elif data.offset == 0:
+            elif offset == 0:
                 self.tile = self.tiles[1]
             else:
                 self.tile = self.tiles[2]
@@ -295,14 +283,13 @@ class BlockHate(Block):
     colors = ((237, 0, 0),)
     index = 6           
     
-    def __init__(self, data):
+    def __init__(self, offset, modifier):
         # TODO: Correct offset
-        if data.offset == 1:
+        super().__init__(offset, modifier)
+        if offset == 1:
             self.tile = self.tiles[0]
         else:
             self.tile = self.tiles[1]
-        self.color = self.colors[0]
-    
     
 class BlockLove(Block):
     # pink (love)
@@ -310,8 +297,8 @@ class BlockLove(Block):
     colors = ((255, 85, 205),)
     index = 7
     
-    def __init__(self, data):
-        self.tile = self.tiles[random.randint(0, 3)]
+    def __init__(self, offset, modifier):
+        self.tile = random.choice(tiles)
         self.color = self.colors[0]
     
     
@@ -321,9 +308,10 @@ class BlockPortal(Block):
     colors = ((109, 129, 144), (255, 254, 199))
     index = 11
     
-    def __init__(self, data):
+    def __init__(self, offset, modifier):
         # TODO: Correct offset
-        if data.offset == 1:
+        super().__init__(offset, modifier)
+        if offset == 1:
             self.tile = self.tiles[0]
             self.color = self.colors[0]
         else:
@@ -337,11 +325,6 @@ class BlockRock(BlockBordered):
     index = 10
     light_color = (139, 164, 182)
     dark_color = (60, 79, 94)
-              
-    def get_tile(self, neighbors, small=False):
-        # TODO: Border
-        return self.get_sprite(small)
-    
     
 class BlockVine(BlockBordered):
     # green (garden)
@@ -351,25 +334,21 @@ class BlockVine(BlockBordered):
     light_color = (196, 254, 37)
     dark_color = (119, 216, 3)
     sheets = []
-    def __init__(self, data):
+    def __init__(self, offset, modifier):
         if BlockVine.generated == False:
             for i in range(8):
                 rotate = (i % 4) * 90
                 flip = i // 4
-                tile = list(self.tiles[0])
+                tile = [self.tiles[0][0].copy(), self.tiles[0][1].copy()]
                 if flip:
                     tile[0] = tile[0].transpose(Image.FLIP_LEFT_RIGHT)
                     tile[1] = tile[1].transpose(Image.FLIP_LEFT_RIGHT)
                 tile[0] = tile[0].rotate(rotate)
                 tile[1] = tile[1].rotate(rotate)
                 self.sheets.append(self.generate_borders(tile))
-        super().__init__(data) 
-        self.sheet, self.sheet_small = self.sheets[random.randint(0, 7)]
-        self.color = self.colors[0]
-                
-    def get_tile(self, neighbors, small=False):
-        # TODO: Border
-        return self.get_sprite(small)
+            BlockVine.generated = True
+        super().__init__(offset, modifier)
+        self.sheet, self.sheet_small = random.choice(sheets)
     
     
 class BlockVoid(Block):
@@ -382,70 +361,24 @@ class BlockWill(Block):
     colors = ((153, 98, 223),)
     index = 9
     
-class Block2Calm(Block):
-    # Calm 2: Die Calmer
-    tiles = (tileAt(0, 3),)
-    colors = ((163, 237, 255),)
-    index = 22
+    def __init__(self, offset, modifier):
+        super().__init__(offset, modifier)
+        self.tile = random.choice(tiles)
 
 ## SP Block Dictionaries
 
-blocks = dict()
-blocks[BlockAct.index] = BlockAct
-blocks[BlockBalk.index] = BlockBalk
-blocks[BlockCalm.index] = BlockCalm
-blocks[BlockDeath.index] = BlockDeath
-blocks[BlockDirt.index] = BlockDirt
-blocks[BlockFury.index] = BlockFury
-blocks[BlockHate.index] = BlockHate
-blocks[BlockLove.index] = BlockLove
-blocks[BlockPortal.index] = BlockPortal
-blocks[BlockRock.index] = BlockRock
-blocks[BlockVine.index] = BlockVine
-blocks[BlockWill.index] = BlockWill
-blocks[Block2Calm.index] = Block2Calm
-
-
-
-"""
-class Tile():
-    self.__init__(self, name, index, color, sprites):
-      """  
-
-tiles = dict()
-name = dict()
-color = dict()
-sprites_small = dict()
-sprites_large = dict()
-
-def register_tile(tile, index, value, regions):
-    name[index] = tile
-    color[index] = value  
-    types_small = dict()
-    types_large = dict()
-    for region in regions:
-        bounds_small = (region[0]*12, region[1]*12, (region[0]+1)*12, (region[1]+1)*12)
-        bounds_large = (region[0]*24, region[1]*24, (region[0]+1)*24, (region[1]+1)*24)
-        tile_small = sheet_small.crop(bounds_small)
-        tile_large = sheet_large.crop(bounds_large)
-        types_small[region[2]] = tile_small
-        types_large[region[2]] = tile_large
-    sprites_small[index] = types_small
-    sprites_large[index] = types_large
-
-register_tile("boost",     0,  (0,   138, 255), ((6, 2, 0),))       
-register_tile("anchor",    1,  (173, 173, 25),  ((4, 2, 0), (5, 2, 1)))    
-register_tile("ice",       2,  (163, 237, 255), ((0, 3, 0),))    
-register_tile("grass",     3,  (115, 212, 0),   ((0, 0, 0), (1, 0, 1), (2, 0, 2), (3, 0, 3)))
-register_tile("dirt",      4,  (125, 66,  9),   ((4, 0, 0), (5, 0, 1), (6, 0, 2), (7, 0, 3)))   
-register_tile("arrow",     5,  (255, 168, 0),   ((0, 2, 2), (1, 2, 4), (2, 2, 0), (3, 2, 3), (3, 3, 1)))
-register_tile("mine",      6,  (224, 52,  52),  ((6, 1, 0), (7, 1, 1), (7, 3, 2)))
-register_tile("love",      7,  (255, 85,  205), ((0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 1, 3)))
-register_tile("garden",    8,  (148, 232, 16),  ((1, 3, 0),))
-register_tile("pylon",     9,  (153, 98,  223), ((4, 1, 0), (5, 1, 1)))
-register_tile("structure", 10, (109, 129, 144), ((7, 2, 0),))
-register_tile("gateway",   11, (139, 164, 182), ((4, 3, 0), (5, 3, 1)))
-
+Block.all_blocks[BlockAct.index] = BlockAct
+Block.all_blocks[BlockBalk.index] = BlockBalk
+Block.all_blocks[BlockCalm.index] = BlockCalm
+Block.all_blocks[BlockDeath.index] = BlockDeath
+Block.all_blocks[BlockDirt.index] = BlockDirt
+Block.all_blocks[BlockFury.index] = BlockFury
+Block.all_blocks[BlockHate.index] = BlockHate
+Block.all_blocks[BlockLove.index] = BlockLove
+Block.all_blocks[BlockPortal.index] = BlockPortal
+Block.all_blocks[BlockRock.index] = BlockRock
+Block.all_blocks[BlockVine.index] = BlockVine
+Block.all_blocks[BlockWill.index] = BlockWill
 
             
 ## SPBoard Class and Functions
@@ -453,7 +386,6 @@ register_tile("gateway",   11, (139, 164, 182), ((4, 3, 0), (5, 3, 1)))
 class SPBoard():
     def __init__(self, size, scale, border, auto_offset):
         self.view_size = size * (2 if border else 1)
-        self.px = self.image.load()
         self.size = size
         self.scale = scale
         self.border = border
@@ -463,13 +395,15 @@ class SPBoard():
         self.rendered = False
         self.map = dict()
         self.invisible = dict()
+        self.gateways = set()
+        self.structs = set()
+        self.user = set()
         
-    def place(self, x, y, block_type, data):
+    def place(self, x, y, block):
         x = x % self.view_size
         y = y % self.view_size
         x_draw = (x + self.xoffset) % self.view_size
         y_draw = (y + self.yoffset) % self.view_size
-        block = block_type(data)
         self.map[(x, y)] = block
         self.set_neighbors(x, y)
             
@@ -478,33 +412,32 @@ class SPBoard():
         for neighbor, dir in neighbors((x, y)):
             if neighbor in self.map:
                 block_near = self.map[neighbor]
-                if block.index == block_near.index:
-                    block.neighbors.add(dir)
-                    block_near.neighbors.add(dir.opposite())
+                block.neighbors.add(dir, block_near.index)
+                block_near.neighbors.add(dir.opposite(), block_near.index)
                              
     def remove_neighbors(self, x, y):
         block = self.map[(x, y)]
         for neighbor, dir in neighbors((x, y)):
             if neighbor in self.map:
                 block_near = self.map[neighbor]
-                if block.index == block_near.index:
-                    block.neighbors.remove(dir)
-                    block_near.neighbors.remove(dir.opposite())   
+                block.neighbors.remove(dir, block_near.index)
+                block_near.neighbors.remove(dir.opposite(), block_near.index)   
     
     def show(self, x, y):
         if (x, y) in self.invisible:
             self.map[(x, y)] = self.invisible[(x, y)]
-            self.invisible.pop((x, y))
             self.set_neighbors(x, y)
+            self.invisible.pop((x, y))
         
     def hide(self, x, y):
         if (x, y) in self.map:
             self.invisible[(x, y)] = self.map[(x, y)]
-            self.map.pop((x, y))
             self.remove_neighbors(x, y)
+            self.map.pop((x, y))
             
             
     def shift(self, xoffset, yoffset):
+        self.check_render()
         xsplit = self.view_size - xoffset
         ysplit = self.view_size - yoffset
         for image, scale in [(self.image, 1), (self.tile_image, 12), (self.original, 24)]:
@@ -521,6 +454,7 @@ class SPBoard():
         self.image = Image.new("RGBA", (self.view_size, self.view_size), ImageColor.colormap["white"])
         self.tile_image = Image.new("RGBA", (self.view_size*12, self.view_size*12), ImageColor.colormap["white"])
         self.original = Image.new("RGBA", (self.view_size*24, self.view_size*24), ImageColor.colormap["white"])
+        self.px = self.image.load()
         for coord in self.map:
             block = self.map[coord]
     
@@ -552,32 +486,25 @@ class SPBoard():
         else:
             output = self.original.resize((self.size*self.scale, self.size*self.scale))
         output.show()
-"""
+
 ## Board Creation and Data Extraction
 
 board = SPBoard(size, scale, border, auto_offset)
 
 data_entries = data.split(b"\x06")
-entries = data.split(b"\x06\x17")
 
-data_extract = [d[1:17].split(b",")[:5] for d in data_entries]
-data_tiles = [d for d in data_extract if len(d) == 5]
+data_extract = [d[1:].split(b",")[:5] for d in data_entries]
+data_tiles = [[*d[:4], *d[4].split(b'|')] for d in data_extract if len(d) == 5]
 
-for block in data_tiles:
-    tile = int(block[0])
+for tile in data_tiles:
+    block = Block.from_data(tile)
     x = int(block[1])
     y = int(block[2])
-    offset = int(block[3])
-    modifier = int(block[4].split(b'|')[0])
-    tiles[(x, y)] = block
-    if tile in color:
-        board.place(x, y, color[tile])
-        board.place_tile(x, y, tile, offset, modifier)
-    else:
-        board.place(x, y, (0,0,0)) 
+    board.place(x, y, block)     
         
 ## Data Refining
-               
+        
+        # TODO: This       
 data_mem = [d for d in data_entries if chr(d[1]).isupper() and str(d[1:4], "utf-8") != "SUB"]
 
 visible = set()
@@ -594,7 +521,7 @@ for tile in data_tiles:
         gateways.add(coord)
     else:
         user.add(coord)
-"""
+
 ## Logical Tile Generators
 
 def perimeter(start, radius):
