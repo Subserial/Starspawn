@@ -7,6 +7,7 @@ Run with `python starspawn.py` to generate an image based on a save in the same 
 
 ## Flags
 All flags are optional.
+
 | Option | Flag | Argument | Description |
 |---|---|---|---|---|
 | File | -f, --file | path | Specify save file path (default: star.save) |
