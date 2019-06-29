@@ -1,19 +1,29 @@
 from PIL import Image, ImageFilter, ImageColor
 from queue import SimpleQueue as queue
 from enum import Enum
-import random
+import argparse, random
 
-size = 160
-scale = 1
+## Argument Parsing
 
-auto_offset = True
-border = False
+parser = argparse.ArgumentParser(description="Visualizer for Starseed Pilgrim", usage="%(prog)s [options]")
+parser.add_argument("-f", "--file", nargs="?", default="star.save", help="save file location (default: star.save)")
+parser.add_argument("-b", "--border", action='store_true', help="Enable 2x tile mode")
+parser.add_argument("-s", "--scale", nargs=1, type=float, default=1, help="scale image linearly")
+
+group_hidden = parser.add_mutually_exclusive_group()
+group_hidden.add_argument("-r", "--radius", nargs=1, type=int, default=10, help="set island hide radius (default 10)")
+group_hidden.add_argument("-v", "--visible", action='store_true', help="reveal all tiles")
+
+group_offset = parser.add_mutually_exclusive_group()
+group_offset.add_argument('-o', '--offset', nargs=2, type=int, action='store', default=[0, 0], metavar = ("X", "Y"), help="manually offset image")
+parser.add_argument("-a", "--auto", action="store_true", help="automatically offset image based on unoccupied rows or columns")
+
+group_tile = parser.add_mutually_exclusive_group()
+group_tile.add_argument("-t", "--tile", action='store_true', help='use 12x12 tileset (EXPERIMENTAL)')
+group_tile.add_argument("-p", "--pixel", action='store_true', help='use pixel tileset')
 
 ## Initial File Imports
 
-with open("star.save", "rb") as save:
-    data = save.readline()
-    
 sheet_small = Image.open("SPsmall.png")    
 sheet_large = Image.open("SP.png")
 
@@ -25,18 +35,38 @@ def tileAt(x, y):
     large = sheet_large.crop((x*24, y*24, (x+1)*24, (y+1)*24))
     return large, small
     
-def transparent(image):
+def translucent(image):
     result = image.copy()
     result.putalpha(128)
     return result
 
+## Logical Tile Generators
+
+def perimeter(start, radius, mod):
+    for i in range(-radius, radius+1):
+        yield (start[0] + radius) % mod, (start[1] + i) % mod
+        yield (start[0] - radius) % mod, (start[1] + i) % mod
+        yield (start[0] + i) % mod, (start[1] + radius) % mod
+        yield (start[0] + i) % mod, (start[1] - radius) % mod
+
+def surround(start, rel, mod):
+    for i in range(-2, 3):
+        for j in range(-2, 3):
+            coord = ((start[0] + i) % mod, (start[1] + j) % mod)
+            c_rel = (rel[0]+i, rel[1]+j)
+            yield coord, c_rel
+            
+def neighbors(start, mod):
+    for dir in Border:
+            yield ((start[0] + dir.value[0]) % mod, (start[1] + dir.value[1]) % mod), dir
+
 ## Tile Definitions
 
 class Border(Enum):
-    TOP = (0, 1)
+    TOP = (0, -1)
     LEFT = (-1, 0)
     RIGHT = (1, 0)
-    BOTTOM = (0, -1)
+    BOTTOM = (0, 1)
     
     def opposite(self):
         if self == Border.TOP:
@@ -53,24 +83,24 @@ class Border(Enum):
         x, y = 0, 0
         if Border.LEFT in neighbor_set:
             if Border.RIGHT in neighbor_set:
-                x = 3
+                x = 1
             else:
-                x = 0
+                x = 2
         else:
             if Border.RIGHT in neighbor_set:
-                x = 2
+                x = 0
             else:
-                x = 1
+                x = 3
         if Border.TOP in neighbor_set:
             if Border.BOTTOM in neighbor_set:
-                y = 3
+                y = 1
             else:
-                y = 0
+                y = 2
         else:
             if Border.BOTTOM in neighbor_set:
-                y = 2
+                y = 0
             else:
-                y = 1
+                y = 3
         return x, y
 
 class Block():
@@ -82,11 +112,14 @@ class Block():
         self.tile = self.tiles[0]
         self.color = self.colors[0]
             
-    def get_tile(self, neighbors, small=False):
+    def get_tile(self, small=False):
         if small:
             return self.tile[1]
         else:
             return self.tile[0]
+            
+    def get_color(self):
+        return self.color
         
     def add_neighbor(self, pos, index):
         pass
@@ -123,15 +156,15 @@ class BlockBordered(Block):
     def get_tile(self, small=False):
         x, y = Border.sheet_pos(self.neighbors)
         if small:
-            return self.sheet_small.crop(x*12, y*12, (x+1)*12, (y+1)*12)
+            return self.sheet_small.crop((x*12, y*12, (x+1)*12, (y+1)*12))
         else:
-            return self.sheet_small.crop(x*24, y*24, (x+1)*24, (y+1)*24)
+            return self.sheet.crop((x*24, y*24, (x+1)*24, (y+1)*24))
         
     def add_neighbor(self, pos, index):
         self.neighbors.add(pos)
         
-    def remove_neighbor(self, pos):
-        self.neighbors.remove(pos, index)
+    def remove_neighbor(self, pos, index):
+        self.neighbors.remove(pos)
         
     def clear_neighbors(self):
         self.neighbors.clear()
@@ -298,7 +331,7 @@ class BlockLove(Block):
     index = 7
     
     def __init__(self, offset, modifier):
-        self.tile = random.choice(tiles)
+        self.tile = random.choice(self.tiles)
         self.color = self.colors[0]
     
     
@@ -325,6 +358,14 @@ class BlockRock(BlockBordered):
     index = 10
     light_color = (139, 164, 182)
     dark_color = (60, 79, 94)
+        
+    def add_neighbor(self, pos, index):
+        if index == BlockRock.index:
+            self.neighbors.add(pos)
+        
+    def remove_neighbor(self, pos, index):
+        if index == BlockRock.index:
+            self.neighbors.remove(pos)
     
 class BlockVine(BlockBordered):
     # green (garden)
@@ -348,7 +389,7 @@ class BlockVine(BlockBordered):
                 self.sheets.append(self.generate_borders(tile))
             BlockVine.generated = True
         super().__init__(offset, modifier)
-        self.sheet, self.sheet_small = random.choice(sheets)
+        self.sheet, self.sheet_small = random.choice(self.sheets)
     
     
 class BlockVoid(Block):
@@ -363,7 +404,7 @@ class BlockWill(Block):
     
     def __init__(self, offset, modifier):
         super().__init__(offset, modifier)
-        self.tile = random.choice(tiles)
+        self.tile = random.choice(self.tiles)
 
 ## SP Block Dictionaries
 
@@ -379,22 +420,21 @@ Block.all_blocks[BlockPortal.index] = BlockPortal
 Block.all_blocks[BlockRock.index] = BlockRock
 Block.all_blocks[BlockVine.index] = BlockVine
 Block.all_blocks[BlockWill.index] = BlockWill
-
             
-## SPBoard Class and Functions
+## SPBoard Class
 
 class SPBoard():
-    def __init__(self, size, scale, border, auto_offset):
+    def __init__(self, size, scale=1, border=False, auto_offset=False, offset=(0, 0), visible=-1):
         self.view_size = size * (2 if border else 1)
         self.size = size
         self.scale = scale
         self.border = border
         self.auto_offset = auto_offset
-        self.xoffset = 0
-        self.yoffset = 0
+        self.offset = offset
+        self.visible = visible
         self.rendered = False
         self.map = dict()
-        self.invisible = dict()
+        self.hidden = dict()
         self.gateways = set()
         self.structs = set()
         self.user = set()
@@ -402,39 +442,61 @@ class SPBoard():
     def place(self, x, y, block):
         x = x % self.view_size
         y = y % self.view_size
-        x_draw = (x + self.xoffset) % self.view_size
-        y_draw = (y + self.yoffset) % self.view_size
         self.map[(x, y)] = block
         self.set_neighbors(x, y)
+        self.add_to_sort(x, y, block.index)
             
     def set_neighbors(self, x, y):
         block = self.map[(x, y)]
-        for neighbor, dir in neighbors((x, y)):
+        for neighbor, dir in neighbors((x, y), self.size):
             if neighbor in self.map:
                 block_near = self.map[neighbor]
-                block.neighbors.add(dir, block_near.index)
-                block_near.neighbors.add(dir.opposite(), block_near.index)
+                block.add_neighbor(dir, block_near.index)
+                block_near.add_neighbor(dir.opposite(), block.index)
                              
     def remove_neighbors(self, x, y):
         block = self.map[(x, y)]
-        for neighbor, dir in neighbors((x, y)):
+        for neighbor, dir in neighbors((x, y), self.size):
             if neighbor in self.map:
                 block_near = self.map[neighbor]
-                block.neighbors.remove(dir, block_near.index)
-                block_near.neighbors.remove(dir.opposite(), block_near.index)   
+                block.remove_neighbor(dir, block_near.index)
+                block_near.remove_neighbor(dir.opposite(), block.index)   
     
     def show(self, x, y):
-        if (x, y) in self.invisible:
-            self.map[(x, y)] = self.invisible[(x, y)]
+        if (x, y) in self.hidden:
+            block = self.hidden[(x, y)]
+            self.map[(x, y)] = self.hidden[(x, y)]
             self.set_neighbors(x, y)
-            self.invisible.pop((x, y))
+            self.hidden.pop((x, y))
+            self.add_to_sort(x, y, block.index)
+            
+    def add_to_sort(self, x, y, index):
+        if index == BlockPortal.index:
+            self.gateways.add((x, y))
+        elif index == BlockRock.index:
+            self.structs.add((x, y))
+        elif index != BlockDirt.index:
+            self.user.add((x, y))
         
     def hide(self, x, y):
         if (x, y) in self.map:
-            self.invisible[(x, y)] = self.map[(x, y)]
+            block = self.map[(x, y)]
+            self.hidden[(x, y)] = block
             self.remove_neighbors(x, y)
             self.map.pop((x, y))
+            self.remove_from_sort(x, y, block.index)
             
+    def remove_from_sort(self, x, y, index):
+        if index == BlockPortal.index:
+            self.gateways.remove((x, y))
+        elif index == BlockRock.index:
+            self.structs.remove((x, y))
+        elif index != BlockDirt.index:
+            self.user.remove((x, y))
+            
+    def set_all_visible(self):
+        for coord in self.hidden:
+            self.show(*coord)
             
     def shift(self, xoffset, yoffset):
         self.check_render()
@@ -451,17 +513,35 @@ class SPBoard():
             image.paste(br, (0, 0))        
             
     def render(self):
+        if self.visible > 0:
+            self.mark_unseen(self.visible)
         self.image = Image.new("RGBA", (self.view_size, self.view_size), ImageColor.colormap["white"])
         self.tile_image = Image.new("RGBA", (self.view_size*12, self.view_size*12), ImageColor.colormap["white"])
         self.original = Image.new("RGBA", (self.view_size*24, self.view_size*24), ImageColor.colormap["white"])
         self.px = self.image.load()
-        for coord in self.map:
-            block = self.map[coord]
+        if self.auto_offset:
+            offset = self.find_offset()
+        else:
+            offset = self.offset
+        for x, y in self.map:
+            block = self.map[x, y]
+            if self.border:
+                coords = [((x - self.size // 2) % self.view_size, (y - self.size // 2) % self.view_size),
+                          ((x - self.size // 2) % self.view_size, (y + self.size // 2) % self.view_size),
+                          ((x + self.size // 2) % self.view_size, (y - self.size // 2) % self.view_size),
+                          ((x + self.size // 2) % self.view_size, (y + self.size // 2) % self.view_size)]
+            else:
+                coords = [(x, y)]
+            for cx, cy in coords:
+                self.px[cx, cy] = block.get_color()
+                self.tile_image.paste(block.get_tile(small=True), (cx*12, cy*12))
+                self.original.paste(block.get_tile(small=False), (cx*24, cy*24))
+        self.rendered = True
+        self.shift(*offset)
     
     def check_render(self):
         if not self.rendered:
             self.render()
-            self.rendered = True
         
     def view_px(self):
         self.check_render()
@@ -486,184 +566,165 @@ class SPBoard():
         else:
             output = self.original.resize((self.size*self.scale, self.size*self.scale))
         output.show()
-
-## Board Creation and Data Extraction
-
-board = SPBoard(size, scale, border, auto_offset)
-
-data_entries = data.split(b"\x06")
-
-data_extract = [d[1:].split(b",")[:5] for d in data_entries]
-data_tiles = [[*d[:4], *d[4].split(b'|')] for d in data_extract if len(d) == 5]
-
-for tile in data_tiles:
-    block = Block.from_data(tile)
-    x = int(block[1])
-    y = int(block[2])
-    board.place(x, y, block)     
         
-## Data Refining
+    def can_see(self, tiles, range):
+        for given_tile in tiles:
+            for tile in perimeter(given_tile, range, self.size):
+                if tile in self.user:
+                    return True
+        return False
         
-        # TODO: This       
-data_mem = [d for d in data_entries if chr(d[1]).isupper() and str(d[1:4], "utf-8") != "SUB"]
-
-visible = set()
-gateways = set()
-structs = set()
-user = set()
-
-for tile in data_tiles:
-    coord = (int(tile[1]), int(tile[2]))
-    visible.add(coord)
-    if int(tile[0]) == 10:
-        structs.add(coord)
-    elif int(tile[0]) == 11:
-        gateways.add(coord)
-    else:
-        user.add(coord)
-
-## Logical Tile Generators
-
-def perimeter(start, radius):
-    for i in range(-radius, radius+1):
-        yield (start[0] + radius) % 160, (start[1] + i) % 160
-        yield (start[0] - radius) % 160, (start[1] + i) % 160
-        yield (start[0] + i) % 160, (start[1] + radius) % 160
-        yield (start[0] + i) % 160, (start[1] - radius) % 160
-
-def surround(start, rel):
-    for i in range(-2, 3):
-        for j in range(-2, 3):
-            coord = ((start[0] + i) % 160, (start[1] + j) % 160)
-            c_rel = (rel[0]+i, rel[1]+j)
-            yield coord, c_rel
-            
-def neighbors(start):
-    for dir in Border:
-            yield ((start[0] + dir[0]) % 160, (start[1] + dir[1]) % 160), dir
-            
-
-## Post-processing
-
-def find_cell(start):
-    first = (start, (0, 0))
-    gateway = None
-    bounds = [0, 0, 0, 0]
-    next = queue()
-    search = set()
-    structs = set()
-    next.put(first)
-    while not next.empty():
-        for cell in surround(*next.get()):
-            if cell not in search:
-                search.add(cell)
-                if cell[0] in tiles:
-                    tile_type = int(tiles[cell[0]][0])
-                    if tile_type == 10:
-                        structs.add(cell[0])
+    def find_island(self, x, y):
+        if (x, y) not in self.map:
+            return None, None, None
+        first = ((x, y), (0, 0))
+        gateway = None
+        bounds = [0, 0, 0, 0]
+        next = queue()
+        search = set()
+        islands = set()
+        next.put(first)
+        while not next.empty():
+            for cell in surround(*next.get(), self.size):
+                if cell not in search:
+                    search.add(cell)
+                    coord, rel = cell
+                    # TODO: FIX
+                    if coord in self.structs:
+                        islands.add(coord)
                         next.put(cell)
-                        if (cell[1][0] < bounds[0]):
-                            bounds[0] = cell[1][0]
-                        if (cell[1][1] < bounds[1]):
-                            bounds[1] = cell[1][1]
-                        if (cell[1][0] > bounds[2]):
-                            bounds[2] = cell[1][0]
-                        if (cell[1][1] > bounds[3]):
-                            bounds[3] = cell[1][1]
-                    if tile_type == 11:
-                        gateway = cell[0]
-    island_size = (bounds[2] - bounds[0], bounds[3] - bounds[1])
-    return structs, gateway, island_size
-    
-def on_bound(cell):
-    for tile in perimeter(cell, 12):
-        if tile in user:
-            return True
-    return False
-    
-def can_see(tiles):
-    for tile in tiles:
-        if on_bound(tile):
-            return True
-    return False
-    
-"""
-unsearched_structs = structs.copy()
-found_structs = set()
+                        if (rel[0] < bounds[0]):
+                            bounds[0] = rel[0]
+                        if (rel[1] < bounds[1]):
+                            bounds[1] = rel[1]
+                        if (rel[0] > bounds[2]):
+                            bounds[2] = rel[0]
+                        if (rel[1] > bounds[3]):
+                            bounds[3] = rel[1]
+                    if coord in self.gateways:
+                        gateway = coord
+        island_size = (bounds[2] - bounds[0], bounds[3] - bounds[1])
+        return islands, gateway, island_size
 
-while len(unsearched_structs) > 0:
-    next = unsearched_structs.pop()
-    uncheck, gateway, island_size = find_cell(next)
-    for struct in uncheck:
-        if struct in unsearched_structs:
-            unsearched_structs.remove(struct)
-    found_structs.add((next, gateway, island_size))
-    if not can_see(uncheck):
-        for tile in uncheck:
-            visible.remove(tile)
-            board.remove(*tile)
-            board.remove_tile(*tile)
-        if gateway:
-            visible.remove(gateway)
-            board.remove(*gateway)
-            board.remove_tile(*gateway)
+    def mark_unseen(self, range):
+        # TODO: Split into find_islands and is_hidden
+        self.set_all_visible()
+        unsearched = self.structs.copy()
+        found = set()
+
+        while len(unsearched) > 0:
+            next = unsearched.pop()
+            uncheck, gateway, island_size = self.find_island(*next)
+            for struct in uncheck:
+                if struct in unsearched:
+                    unsearched.remove(struct)
+            found.add((next, gateway, island_size))
+            if not self.can_see(uncheck, range):
+                for tile in uncheck:
+                    self.hide(*tile)
+                if gateway:
+                    self.hide(*gateway)
             
-
-if auto_offset:            
-    row_written = [0 for i in range(board.size)]            
-    col_written = [0 for i in range(board.size)]
-    
-    for row in range(board.size):
-        for col in range(board.size):
-            if (col, row) in visible:
-                row_written[row] = 1
-                break
-    
-    for col in range(board.size):
+    def find_offset(self):          
+        row_written = [0 for i in range(board.size)]            
+        col_written = [0 for i in range(board.size)]
+        
         for row in range(board.size):
-            if (col, row) in visible:
-                col_written[col] = 1
-                break
-                
-    xoffset = 0
-    yoffset = 0
-    if len(visible) > 0:
-        index = 0
-        run_max = 0
-        while index < size:
-            if col_written[index]:
-                index += 1
-            else:
-                start = index
-                run = 0
-                while not col_written[index]:
-                    run += 1
-                    index = (index + 1) % 160
-                if run > run_max:
-                    run_max = run
-                    xoffset = board.size - ((start + run // 2) % board.size)
-        index = 0
-        run_max = 0
-        while index < board.size:
-            if row_written[index]:
-                index += 1
-            else:
-                start = index
-                run = 0
-                while not row_written[index]:
-                    run += 1
+            for col in range(board.size):
+                if (col, row) in self.map:
+                    row_written[row] = 1
+                    break
+        
+        for col in range(board.size):
+            for row in range(board.size):
+                if (col, row) in self.map:
+                    col_written[col] = 1
+                    break
+                    
+        xoffset = 0
+        yoffset = 0
+        if len(self.map) > 0:
+            index = 0
+            run_max = 0
+            while index < self.size:
+                if col_written[index]:
                     index += 1
-                if run > run_max:
-                    run_max = run
-                    yoffset = board.size - ((start + run // 2) % board.size)
+                else:
+                    start = index
+                    run = 0
+                    while not col_written[index]:
+                        run += 1
+                        index = (index + 1) % self.size
+                    if run > run_max:
+                        run_max = run
+                        xoffset = self.size - ((start + run // 2) % self.size)
+            index = 0
+            run_max = 0
+            while index < self.size:
+                if row_written[index]:
+                    index += 1
+                else:
+                    start = index
+                    run = 0
+                    while not row_written[index]:
+                        run += 1
+                        index = (index + 1) % self.size
+                    if run > run_max:
+                        run_max = run
+                        yoffset = self.size - ((start + run // 2) % self.size)
+    
+        return xoffset, yoffset
 
-    print(xoffset, yoffset)
-    board.shift(xoffset, yoffset)
-"""
+## Main Entrypoint
 
+def main():    
+    global board # Debugging global
+    args = parser.parse_args()
+    
+    size = 160
+    file = args.file
+    scale = args.scale
+    if args.auto:
+        auto_offset = True
+        offset = (0, 0)
+    else:
+        auto_offset = False
+        offset = args.offset
+    border = args.border
+    if args.visible:
+        visible = -1
+    else:
+        visible = args.radius
+    use_tile = args.tile
+    use_pixel = args.pixel
 
+    with open(file, "rb") as save:
+        data = save.readline()
+    
+    board = SPBoard(size, scale=scale, border=border, auto_offset=auto_offset, offset=offset, visible=visible) 
 
+    data_entries = data.split(b"\x06")
+    
+    data_extract = [d[1:].split(b",")[:5] for d in data_entries]
+    data_tiles = [[*d[:4], *d[4].split(b'|')] for d in data_extract if len(d) == 5]
+    data_mem = [d for d in data_entries if chr(d[1]).isupper() and str(d[1:4], "utf-8") != "SUB"]
+    
+    for tile in data_tiles:
+        block = Block.from_data(tile)
+        x = int(tile[1])
+        y = int(tile[2])
+        board.place(x, y, block) 
+        
+    if use_pixel:
+        board.view_px()
+    elif use_tile:
+        board.view_small()
+    else:
+        board.view_original()
 
+if __name__ == "__main__":
+    board = None
+    main()
 
 
 
