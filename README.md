@@ -9,7 +9,7 @@ Run with `python starspawn.py` to generate an image based on a save in the same 
 All flags are optional.
 
 | Option | Flag | Argument | Description |
-|---|---|---|---|---|
+|---|---|---|---|
 | File | -f, --file | path | Specify save file path (default: star.save) |
 | Border | -b, --border | none | Enable tiling board in 2x2 |
 | Scale | -s, --scale | float | Scale board linearly |
