@@ -1,11 +1,11 @@
-## Starspawn
+# Starspawn
 
 Made with Love, Will, Hate and Fury.
 Hides islands you haven't found yet.
 
 Run with `python starspawn.py` to generate an image based on a save in the same folder.
 
-# Flags
+## Flags
 All flags are optional.
 | Option | Flag | Argument | Description |
 |---|---|---|---|---|
@@ -19,11 +19,11 @@ All flags are optional.
 | Tile | -t, --tile | none | Use custom 12x12 tileset (UNOFFICIAL, EXPERIMENTAL) |
 | Pixel | -p, --pixel | none | Use pixel tileset |
 
-# Requirements
+## Requirements
 
 Pillow (PIL fork) for python
 
-# TODO:
+## TODO:
 
 Unexploded Hate blocks are not detected.
 Finished gateways are not detected.
