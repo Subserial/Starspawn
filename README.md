@@ -5,6 +5,8 @@ Hides islands you haven't found yet.
 
 Run with `python starspawn.py` to generate an image based on a save in the same folder.
 
+Requires [pillow](https://pypi.org/project/Pillow/)
+
 ## Flags
 All flags are optional.
 
@@ -20,11 +22,3 @@ All flags are optional.
 | Tile | -t, --tile | none | Use custom 12x12 tileset (UNOFFICIAL, EXPERIMENTAL) |
 | Pixel | -p, --pixel | none | Use pixel tileset |
 
-## Requirements
-
-Pillow (PIL fork) for python
-
-## TODO:
-
-Unexploded Hate blocks are not detected.
-Finished gateways are not detected.

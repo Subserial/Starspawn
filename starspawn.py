@@ -317,9 +317,8 @@ class BlockHate(Block):
     index = 6           
     
     def __init__(self, offset, modifier):
-        # TODO: Correct offset
         super().__init__(offset, modifier)
-        if offset == 1:
+        if offset == 2:
             self.tile = self.tiles[0]
         else:
             self.tile = self.tiles[1]
@@ -589,7 +588,7 @@ class SPBoard():
                 if cell not in search:
                     search.add(cell)
                     coord, rel = cell
-                    # TODO: FIX
+                    # TODO: FIX (edit: thanks, me)
                     if coord in self.structs:
                         islands.add(coord)
                         next.put(cell)
